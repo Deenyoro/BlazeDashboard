@@ -1,0 +1,16 @@
+# BlazeDashboard Scraper Schedule
+# Runs at 11:59 PM EST (04:59 UTC) every day
+# EST = UTC-5, so 11:59 PM EST = 4:59 AM UTC next day
+
+# Environment variables
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+BLAZE_EMAIL=${BLAZE_EMAIL}
+BLAZE_PASSWORD=${BLAZE_PASSWORD}
+API_URL=${API_URL:-http://api:8000}
+EXPORT_DIR=/exports
+
+# Run scraper at 11:59 PM EST (04:59 UTC)
+59 4 * * * /app/scheduler.sh >> /exports/logs/cron.log 2>&1
+
+# Empty line required at end of crontab

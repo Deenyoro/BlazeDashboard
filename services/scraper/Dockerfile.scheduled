@@ -1,0 +1,47 @@
+FROM mcr.microsoft.com/playwright:v1.40.0-focal
+
+WORKDIR /app
+
+# Install cron and tzdata
+RUN apt-get update && apt-get install -y cron tzdata && rm -rf /var/lib/apt/lists/*
+
+# Set timezone to EST
+ENV TZ=America/New_York
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Copy package files and install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy application files
+COPY . .
+
+# Make scheduler script executable
+RUN chmod +x scheduler.sh
+
+# Create exports and logs directories
+RUN mkdir -p /exports/logs
+
+# Copy and set up crontab
+COPY crontab /etc/cron.d/blazedashboard-scraper
+RUN chmod 0644 /etc/cron.d/blazedashboard-scraper
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+# Export environment variables for cron\n\
+printenv | grep -E "BLAZE_|API_URL|EXPORT_DIR" >> /etc/environment\n\
+\n\
+# Start cron in foreground\n\
+echo "Starting BlazeDashboard scraper scheduler..."\n\
+echo "Schedule: 11:59 PM EST daily"\n\
+echo "Timezone: $(cat /etc/timezone)"\n\
+echo "Current time: $(date)"\n\
+\n\
+# Apply crontab\n\
+crontab /etc/cron.d/blazedashboard-scraper\n\
+\n\
+# Run cron in foreground\n\
+cron -f\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]

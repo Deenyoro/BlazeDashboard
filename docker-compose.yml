@@ -1,0 +1,95 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: blazedashboard-postgres
+    environment:
+      POSTGRES_DB: blazedb
+      POSTGRES_USER: blaze
+      POSTGRES_PASSWORD: blaze_secure_2025
+    volumes:
+      - blazedashboard_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blaze -d blazedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: blazedashboard-api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://blaze:blaze_secure_2025@db:5432/blazedb
+      DATA_DIR: /app/data
+      BLAZE_API_KEY: ${BLAZE_API_KEY}
+      BLAZE_API_SECRET: ${BLAZE_API_SECRET}
+    volumes:
+      - ./services/api:/app
+      # Mount entire data directory - just drop new CSVs in the right folder!
+      - ./data:/app/data:ro
+      - ./exports:/app/exports
+    ports:
+      - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: blazedashboard-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+  # Manual scraper - run with: docker compose run scraper
+  scraper:
+    build:
+      context: ./services/scraper
+      dockerfile: Dockerfile
+    container_name: blazedashboard-scraper
+    environment:
+      BLAZE_EMAIL: ${BLAZE_EMAIL}
+      BLAZE_PASSWORD: ${BLAZE_PASSWORD}
+      EXPORT_DIR: /exports
+      API_URL: http://api:8000
+      HEADLESS: "true"
+    volumes:
+      - ./exports:/exports
+      - ./data:/data
+    depends_on:
+      - api
+    profiles:
+      - scraper
+
+  # Scheduled scraper - runs at 11:59 PM EST daily
+  # Start with: docker compose --profile scheduler up -d scraper-scheduled
+  scraper-scheduled:
+    build:
+      context: ./services/scraper
+      dockerfile: Dockerfile.scheduled
+    container_name: blazedashboard-scraper-scheduled
+    environment:
+      BLAZE_EMAIL: ${BLAZE_EMAIL}
+      BLAZE_PASSWORD: ${BLAZE_PASSWORD}
+      EXPORT_DIR: /exports
+      API_URL: http://api:8000
+      HEADLESS: "true"
+    volumes:
+      - ./exports:/exports
+      - ./data:/data
+    depends_on:
+      - api
+    restart: unless-stopped
+    profiles:
+      - scheduler
+
+volumes:
+  blazedashboard_data:

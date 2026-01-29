@@ -1,0 +1,60 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Internal tooling
+CLAUDE.md
+.claude/
+
+# Separate project
+CannaRoute/
+
+# Data files - CSVs and databases
+data/*.csv
+data/*.zip
+data/*.7z
+exports/
+*.sqlite
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker volumes
+postgres_data/
+
+# Logs
+*.log
+logs/
+
+# Test / Coverage
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.nyc_output/
