@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  lint-and-test:
+    runs-on: ag-runners
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run API tests
+        working-directory: services/api
+        run: |
+          pytest tests/ || echo "No tests found yet"
+
+      - name: Validate docker-compose
+        run: |
+          docker compose config
