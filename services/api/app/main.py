@@ -1,9 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from app.core.database import engine, Base
 from app.api.v1.router import api_router
+from app.core.auth import get_current_user, TokenPayload, AUTH_ENABLED
 from app.models import (
     Transaction, Member, Employee, Product, ProductSale, InventorySnapshot, DiscountUsage,
     RefundHistory, SalesPayment, SalesByQueue, ReceivedInventory,
@@ -50,6 +52,21 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "blazedashboard-api"}
+
+
+@app.get("/me")
+async def get_me(user: Optional[TokenPayload] = Depends(get_current_user)):
+    """Get current authenticated user info"""
+    if user is None:
+        return {"authenticated": False, "auth_enabled": AUTH_ENABLED}
+    return {
+        "authenticated": True,
+        "sub": user.sub,
+        "email": user.email,
+        "name": user.name,
+        "username": user.preferred_username,
+        "roles": user.roles,
+    }
 
 
 @app.get("/")

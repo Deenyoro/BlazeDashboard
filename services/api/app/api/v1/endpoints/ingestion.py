@@ -23,6 +23,47 @@ from app.services.reports_ingestion import (
     ingest_payments_snapshot,
     ingest_all_reports,
 )
+from app.services.employees_ingestion import (
+    ingest_employee_performance,
+    ingest_employee_activity,
+    ingest_time_clock,
+)
+from app.services.members_ingestion import (
+    ingest_member_performance,
+    ingest_inactive_members,
+    ingest_marketing,
+)
+from app.services.extended_sales_ingestion import (
+    ingest_delivery_sales,
+    ingest_canceled_void_sales,
+    ingest_uncomplete_sales,
+    ingest_promotions_activity,
+    ingest_profit_loss,
+    ingest_purchase_order_by_category,
+    ingest_return_to_vendor,
+    ingest_refund_history_detail,
+    ingest_paidinout_activity,
+)
+from app.services.inventory_extended_ingestion import (
+    ingest_inventory_aging,
+    ingest_inventory_distribution,
+    ingest_inventory_valuation,
+    ingest_inventory_transfers,
+    ingest_sell_through,
+    ingest_current_inventory,
+)
+from app.services.sales_breakdowns_ingestion import (
+    ingest_sales_by_city,
+    ingest_sales_by_hour,
+    ingest_sales_by_product,
+    ingest_sales_by_product_category,
+    ingest_sales_by_vendor,
+    ingest_sales_by_consumer_type,
+    ingest_employee_sales_by_product,
+    ingest_products_by_vendor,
+    ingest_product_sales_by_inventory,
+    ingest_product_sell_by_expire,
+)
 from app.models.transaction import Transaction, Member, Employee, ProductSale, Product, InventorySnapshot, DiscountUsage
 from app.models.reports import (
     RefundHistory, SalesPayment, SalesByQueue, ReceivedInventory,
@@ -584,3 +625,200 @@ async def ingest_payments_snapshot_endpoint(
         return {"error": "CSV file not found"}
     result = await ingest_payments_snapshot(db, final_path)
     return {"status": "success", **result}
+
+
+# ============================================================================
+# EXTENDED DATA INGESTION - ALL REMAINING CSV FILES
+# ============================================================================
+
+@router.post("/extended")
+async def ingest_extended_data(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    INGEST ALL EXTENDED DATA FROM REMAINING CSV FILES
+
+    This ingests all additional reports beyond the core 14:
+    - Employee data (performance, activity, time clock)
+    - Member analytics (performance, inactive, marketing)
+    - Extended sales (delivery, canceled, uncomplete, promotions, etc.)
+    - Inventory extended (aging, distribution, valuation, transfers, etc.)
+    - Sales breakdowns (by city, hour, product, category, vendor, etc.)
+
+    All data is deduplicated - running multiple times is safe.
+    """
+    results = {}
+
+    # Employee data
+    extended_ingestions = [
+        ("employee_performance", ingest_employee_performance),
+        ("employee_activity", ingest_employee_activity),
+        ("time_clock", ingest_time_clock),
+        ("member_performance", ingest_member_performance),
+        ("inactive_members", ingest_inactive_members),
+        ("marketing_contacts", ingest_marketing),
+        ("delivery_sales", ingest_delivery_sales),
+        ("canceled_void_sales", ingest_canceled_void_sales),
+        ("uncomplete_sales", ingest_uncomplete_sales),
+        ("promotions_activity", ingest_promotions_activity),
+        ("profit_loss", ingest_profit_loss),
+        ("purchase_order_by_category", ingest_purchase_order_by_category),
+        ("return_to_vendor", ingest_return_to_vendor),
+        ("refund_history_detail", ingest_refund_history_detail),
+        ("paidinout_activity", ingest_paidinout_activity),
+        ("inventory_aging", ingest_inventory_aging),
+        ("inventory_distribution", ingest_inventory_distribution),
+        ("inventory_valuation", ingest_inventory_valuation),
+        ("inventory_transfers", ingest_inventory_transfers),
+        ("sell_through", ingest_sell_through),
+        ("current_inventory", ingest_current_inventory),
+        ("sales_by_city", ingest_sales_by_city),
+        ("sales_by_hour", ingest_sales_by_hour),
+        ("sales_by_product", ingest_sales_by_product),
+        ("sales_by_product_category", ingest_sales_by_product_category),
+        ("sales_by_vendor", ingest_sales_by_vendor),
+        ("sales_by_consumer_type", ingest_sales_by_consumer_type),
+        ("employee_sales_by_product", ingest_employee_sales_by_product),
+        ("products_by_vendor", ingest_products_by_vendor),
+        ("product_sales_by_inventory", ingest_product_sales_by_inventory),
+        ("product_sell_by_expire", ingest_product_sell_by_expire),
+    ]
+
+    total_inserted = 0
+    files_success = 0
+    files_skipped = 0
+    files_error = 0
+
+    for name, ingest_func in extended_ingestions:
+        try:
+            result = await ingest_func(db)
+            results[name] = result
+            if result.get("status") == "skipped":
+                files_skipped += 1
+            else:
+                result["status"] = "success"
+                total_inserted += result.get("inserted", 0)
+                files_success += 1
+        except Exception as e:
+            results[name] = {"status": "error", "error": str(e)}
+            files_error += 1
+
+    return {
+        "status": "complete",
+        "summary": {
+            "total_records_inserted": total_inserted,
+            "files_success": files_success,
+            "files_skipped": files_skipped,
+            "files_error": files_error,
+        },
+        "results": results,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@router.post("/complete")
+async def ingest_complete(
+    db: AsyncSession = Depends(get_db),
+    base_path: str = Query("/app/data", description="Base path for CSV files"),
+):
+    """
+    COMPLETE DATA INGESTION - ALL 59 CSV FILES
+
+    This runs both /all (core 14 reports) and /extended (remaining 31 reports)
+    to ingest every CSV file in the data folder.
+
+    All data is deduplicated - running multiple times is safe.
+    """
+    # First run core ingestion
+    core_results = {}
+
+    # Ingest transactions
+    trans_path = os.path.join(base_path, "total_sales.csv")
+    if os.path.exists(trans_path):
+        try:
+            result = await ingest_csv(db, trans_path, force_reimport=False)
+            core_results["total_sales.csv"] = {"status": "success", **result}
+        except Exception as e:
+            core_results["total_sales.csv"] = {"status": "error", "error": str(e)}
+
+    # Ingest sales details
+    details_path = os.path.join(base_path, "completed_sales_details_report.csv")
+    if os.path.exists(details_path):
+        try:
+            result = await ingest_sales_details_csv(db, details_path)
+            core_results["completed_sales_details_report.csv"] = {"status": "success", **result}
+        except Exception as e:
+            core_results["completed_sales_details_report.csv"] = {"status": "error", "error": str(e)}
+
+    # Ingest all other core reports
+    other_results = await ingest_all_reports(db, base_path)
+    core_results.update(other_results.get("results", {}))
+
+    # Now run extended ingestion
+    extended_ingestions = [
+        ("employee_performance", ingest_employee_performance),
+        ("employee_activity", ingest_employee_activity),
+        ("time_clock", ingest_time_clock),
+        ("member_performance", ingest_member_performance),
+        ("inactive_members", ingest_inactive_members),
+        ("marketing_contacts", ingest_marketing),
+        ("delivery_sales", ingest_delivery_sales),
+        ("canceled_void_sales", ingest_canceled_void_sales),
+        ("uncomplete_sales", ingest_uncomplete_sales),
+        ("promotions_activity", ingest_promotions_activity),
+        ("profit_loss", ingest_profit_loss),
+        ("purchase_order_by_category", ingest_purchase_order_by_category),
+        ("return_to_vendor", ingest_return_to_vendor),
+        ("refund_history_detail", ingest_refund_history_detail),
+        ("paidinout_activity", ingest_paidinout_activity),
+        ("inventory_aging", ingest_inventory_aging),
+        ("inventory_distribution", ingest_inventory_distribution),
+        ("inventory_valuation", ingest_inventory_valuation),
+        ("inventory_transfers", ingest_inventory_transfers),
+        ("sell_through", ingest_sell_through),
+        ("current_inventory", ingest_current_inventory),
+        ("sales_by_city", ingest_sales_by_city),
+        ("sales_by_hour", ingest_sales_by_hour),
+        ("sales_by_product", ingest_sales_by_product),
+        ("sales_by_product_category", ingest_sales_by_product_category),
+        ("sales_by_vendor", ingest_sales_by_vendor),
+        ("sales_by_consumer_type", ingest_sales_by_consumer_type),
+        ("employee_sales_by_product", ingest_employee_sales_by_product),
+        ("products_by_vendor", ingest_products_by_vendor),
+        ("product_sales_by_inventory", ingest_product_sales_by_inventory),
+        ("product_sell_by_expire", ingest_product_sell_by_expire),
+    ]
+
+    extended_results = {}
+    for name, ingest_func in extended_ingestions:
+        try:
+            result = await ingest_func(db)
+            extended_results[name] = result
+            if result.get("status") != "skipped":
+                result["status"] = "success"
+        except Exception as e:
+            extended_results[name] = {"status": "error", "error": str(e)}
+
+    # Combine results
+    all_results = {**core_results, **extended_results}
+
+    # Calculate totals
+    total_inserted = sum(
+        r.get("inserted", 0) for r in all_results.values() if isinstance(r, dict)
+    )
+    files_success = len([r for r in all_results.values() if isinstance(r, dict) and r.get("status") == "success"])
+    files_skipped = len([r for r in all_results.values() if isinstance(r, dict) and r.get("status") == "skipped"])
+    files_error = len([r for r in all_results.values() if isinstance(r, dict) and r.get("status") == "error"])
+
+    return {
+        "status": "complete",
+        "summary": {
+            "total_records_inserted": total_inserted,
+            "files_success": files_success,
+            "files_skipped": files_skipped,
+            "files_error": files_error,
+        },
+        "core_results": core_results,
+        "extended_results": extended_results,
+        "timestamp": datetime.utcnow().isoformat(),
+    }

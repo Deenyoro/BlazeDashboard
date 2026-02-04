@@ -7,6 +7,15 @@ export const api = axios.create({
   },
 })
 
+// Function to set the auth token for all requests
+export const setAuthToken = (token: string | undefined) => {
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+  } else {
+    delete api.defaults.headers.common['Authorization']
+  }
+}
+
 // Types
 export interface Transaction {
   id: string

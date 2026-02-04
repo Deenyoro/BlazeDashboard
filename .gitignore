@@ -12,6 +12,7 @@ CannaRoute/
 
 # Data files - CSVs and databases
 data/*.csv
+data/*.xlsx
 data/*.zip
 data/*.7z
 exports/

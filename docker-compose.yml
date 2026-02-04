@@ -9,8 +9,8 @@ services:
     volumes:
       - blazedashboard_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
-    ports:
-      - "5433:5432"
+    # ports:
+    #   - "5433:5432"  # Only expose if you need external DB access
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U blaze -d blazedb"]
       interval: 5s
@@ -27,6 +27,11 @@ services:
       DATA_DIR: /app/data
       BLAZE_API_KEY: ${BLAZE_API_KEY}
       BLAZE_API_SECRET: ${BLAZE_API_SECRET}
+      # Keycloak Auth
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.wellspringfields.com}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-blaze}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-blaze-app}
     volumes:
       - ./services/api:/app
       # Mount entire data directory - just drop new CSVs in the right folder!
@@ -43,6 +48,11 @@ services:
     build:
       context: ./services/frontend
       dockerfile: Dockerfile
+      args:
+        VITE_AUTH_ENABLED: ${AUTH_ENABLED:-true}
+        VITE_KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.wellspringfields.com}
+        VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-blaze}
+        VITE_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-blaze-app}
     container_name: blazedashboard-frontend
     ports:
       - "3000:80"
